@@ -29,3 +29,8 @@ jobs:
         run: npm --workspace client run build
       - name: Generate Prisma client
         run: npm --workspace server run build
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+         name: scent-layer-dist
+         path: client/dist
