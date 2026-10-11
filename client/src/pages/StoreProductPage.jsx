@@ -8,6 +8,8 @@ import { useDocumentMeta } from '../lib/seo.js';
 export function StoreProductPage() {
   const { id } = useParams();
   const [product, setProduct] = useState(null);
+  const [variations, setVariations] = useState([]);
+  const [selectedVariationId, setSelectedVariationId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -17,12 +19,24 @@ export function StoreProductPage() {
     let cancelled = false;
     async function load() {
       try {
-        const response = await fetch('/api/woocommerce/products');
-        if (!response.ok) throw new Error(`Store request failed (${response.status})`);
-        const products = await response.json();
+        const productResponse = await fetch('/api/woocommerce/products');
+        if (!productResponse.ok) throw new Error(`Store request failed (${productResponse.status})`);
+        const products = await productResponse.json();
         const match = Array.isArray(products) ? products.find(item => String(item.id) === String(id)) : null;
         if (!match) throw new Error('Product not found.');
         if (!cancelled) setProduct(match);
+
+        if (match.type === 'variable') {
+          const variationResponse = await fetch(`/api/woocommerce/products/${id}/variations`);
+          if (!variationResponse.ok) throw new Error(`Variation request failed (${variationResponse.status})`);
+          const variationData = await variationResponse.json();
+          const available = Array.isArray(variationData) ? variationData.filter(item => item.status === 'publish') : [];
+          if (!cancelled) {
+            setVariations(available);
+            const firstPurchasable = available.find(item => item.purchasable && item.stock_status === 'instock');
+            if (firstPurchasable) setSelectedVariationId(String(firstPurchasable.id));
+          }
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Unable to load this product.');
       } finally {
@@ -35,8 +49,14 @@ export function StoreProductPage() {
 
   const category = product?.categories?.[0]?.name;
   const images = product?.images || [];
-  const hasPrice = product?.price !== '' && product?.price != null;
   const cleanDescription = useMemo(() => product?.description || '', [product]);
+  const selectedVariation = variations.find(item => String(item.id) === selectedVariationId) || null;
+  const displayedPrice = selectedVariation?.price || product?.price;
+
+  const variationLabel = variation => {
+    const values = (variation.attributes || []).map(attribute => attribute.option).filter(Boolean);
+    return values.length ? values.join(' / ') : variation.name || `Option ${variation.id}`;
+  };
 
   return <>
     <Nav />
@@ -51,16 +71,26 @@ export function StoreProductPage() {
         <div className="dayole-detail-copy">
           {category && <p className="dayole-detail-category">{category}</p>}
           <h1>{product.name}</h1>
-          <p className="dayole-detail-price">{hasPrice ? `$${product.price}` : product.type === 'variable' ? 'Multiple sizes available' : 'Price coming soon'}</p>
+          <p className="dayole-detail-price">{displayedPrice !== '' && displayedPrice != null ? `$${displayedPrice}` : product.type === 'variable' ? 'Select a size' : 'Price coming soon'}</p>
           {product.short_description && <div className="dayole-detail-short" dangerouslySetInnerHTML={{ __html: product.short_description }} />}
+
+          {product.type === 'variable' && variations.length > 0 && <div className="dayole-variations">
+            <label htmlFor="dayole-size">Size</label>
+            <select id="dayole-size" value={selectedVariationId} onChange={event => setSelectedVariationId(event.target.value)}>
+              {variations.map(variation => <option key={variation.id} value={variation.id} disabled={!variation.purchasable || variation.stock_status !== 'instock'}>
+                {variationLabel(variation)}{variation.price ? ` — $${variation.price}` : ''}{variation.stock_status !== 'instock' ? ' — Out of stock' : ''}
+              </option>)}
+            </select>
+            {selectedVariation && <p className="dayole-stock">{selectedVariation.stock_status === 'instock' ? 'In stock' : 'Out of stock'}</p>}
+          </div>}
+
           {cleanDescription && <div className="dayole-detail-description" dangerouslySetInnerHTML={{ __html: cleanDescription }} />}
-          <p className="dayole-detail-note">Size and purchase options will appear here once the WooCommerce variations are connected.</p>
         </div>
       </section>}
     </main>
     <Footer /><BackToTop />
     <style>{`
-      .dayole-detail{max-width:1320px;margin:0 auto;padding:46px 32px 96px}.dayole-back{display:inline-block;margin-bottom:34px;color:inherit;text-decoration:none;font-size:14px;opacity:.7}.dayole-detail-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:64px;align-items:start}.dayole-detail-media{background:#f6f4f1;border-radius:22px;overflow:hidden;aspect-ratio:1/1}.dayole-detail-media img{width:100%;height:100%;object-fit:cover;display:block}.dayole-detail-placeholder{width:100%;height:100%;background:linear-gradient(135deg,#f3eee8,#faf9f7)}.dayole-detail-category{font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin:8px 0 14px}.dayole-detail-copy h1{font-size:clamp(38px,5vw,68px);line-height:1;margin:0 0 24px;font-weight:500}.dayole-detail-price{font-size:20px;margin:0 0 28px}.dayole-detail-short,.dayole-detail-description{font-size:16px;line-height:1.65;opacity:.8}.dayole-detail-description{margin-top:24px}.dayole-detail-note{margin-top:32px;padding:18px 20px;border:1px solid rgba(127,127,127,.22);border-radius:14px;font-size:14px;opacity:.68}.dayole-detail-status{text-align:center;padding:80px 20px}@media(max-width:800px){.dayole-detail{padding:30px 18px 72px}.dayole-detail-grid{grid-template-columns:1fr;gap:32px}.dayole-detail-copy h1{font-size:40px}}
+      .dayole-detail{max-width:1320px;margin:0 auto;padding:46px 32px 96px}.dayole-back{display:inline-block;margin-bottom:34px;color:inherit;text-decoration:none;font-size:14px;opacity:.7}.dayole-detail-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:64px;align-items:start}.dayole-detail-media{background:#f6f4f1;border-radius:22px;overflow:hidden;aspect-ratio:1/1}.dayole-detail-media img{width:100%;height:100%;object-fit:cover;display:block}.dayole-detail-placeholder{width:100%;height:100%;background:linear-gradient(135deg,#f3eee8,#faf9f7)}.dayole-detail-category{font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin:8px 0 14px}.dayole-detail-copy h1{font-size:clamp(38px,5vw,68px);line-height:1;margin:0 0 24px;font-weight:500}.dayole-detail-price{font-size:20px;margin:0 0 28px}.dayole-detail-short,.dayole-detail-description{font-size:16px;line-height:1.65;opacity:.8}.dayole-detail-description{margin-top:24px}.dayole-variations{margin:30px 0 8px}.dayole-variations label{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;opacity:.7}.dayole-variations select{width:100%;max-width:420px;padding:14px 16px;border:1px solid rgba(127,127,127,.3);border-radius:10px;background:transparent;color:inherit;font:inherit}.dayole-stock{font-size:13px;margin:10px 0 0;opacity:.65}.dayole-detail-status{text-align:center;padding:80px 20px}@media(max-width:800px){.dayole-detail{padding:30px 18px 72px}.dayole-detail-grid{grid-template-columns:1fr;gap:32px}.dayole-detail-copy h1{font-size:40px}}
     `}</style>
   </>;
 }
