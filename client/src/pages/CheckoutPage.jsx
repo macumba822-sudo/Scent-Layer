@@ -13,15 +13,9 @@ function money(amount, minorUnit = 2, currency = 'USD') {
 }
 
 export function CheckoutPage() {
-  const [checkout, setCheckout] = useState(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      return JSON.parse(sessionStorage.getItem('dayoleWooCheckout') || 'null');
-    } catch {
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState(!checkout);
+  const [checkout, setCheckout] = useState(null);
+  const [cart, setCart] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -37,19 +31,35 @@ export function CheckoutPage() {
       setLoading(true);
       setError('');
       try {
-        const response = await fetch('/api/woocommerce/checkout', {
-          headers: {
-            Accept: 'application/json',
-            'Cart-Token': token,
-          },
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(body?.message || body?.error || `Unable to load checkout (${response.status})`);
+        const [cartResponse, checkoutResponse] = await Promise.all([
+          fetch('/api/woocommerce/cart', {
+            headers: {
+              Accept: 'application/json',
+              'Cart-Token': token,
+            },
+          }),
+          fetch('/api/woocommerce/checkout', {
+            headers: {
+              Accept: 'application/json',
+              'Cart-Token': token,
+            },
+          }),
+        ]);
+
+        const cartBody = await cartResponse.json().catch(() => ({}));
+        const checkoutBody = await checkoutResponse.json().catch(() => ({}));
+
+        if (!cartResponse.ok) {
+          throw new Error(cartBody?.message || cartBody?.error || `Unable to load cart (${cartResponse.status})`);
         }
+        if (!checkoutResponse.ok) {
+          throw new Error(checkoutBody?.message || checkoutBody?.error || `Unable to load checkout (${checkoutResponse.status})`);
+        }
+
         if (!cancelled) {
-          setCheckout(body);
-          sessionStorage.setItem('dayoleWooCheckout', JSON.stringify(body));
+          setCart(cartBody);
+          setCheckout(checkoutBody);
+          sessionStorage.setItem('dayoleWooCheckout', JSON.stringify(checkoutBody));
         }
       } catch (err) {
         if (!cancelled) setError(err?.message || 'Unable to load checkout');
@@ -62,8 +72,8 @@ export function CheckoutPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const items = Array.isArray(checkout?.items) ? checkout.items : [];
-  const totals = checkout?.totals || {};
+  const items = Array.isArray(cart?.items) ? cart.items : [];
+  const totals = cart?.totals || {};
   const minorUnit = totals.currency_minor_unit ?? items[0]?.prices?.currency_minor_unit ?? 2;
   const currency = totals.currency_code || items[0]?.prices?.currency_code || 'USD';
   const total = totals.total_price ?? totals.total_items ?? 0;
@@ -86,6 +96,12 @@ export function CheckoutPage() {
             <p>{error}</p>
             <Link to="/store">Return to DAYOLE Store</Link>
           </section>
+        ) : items.length === 0 ? (
+          <section style={{ background: '#fff', borderRadius: 20, padding: 32 }}>
+            <h2 style={{ marginTop: 0 }}>Your cart is empty.</h2>
+            <p>Add a DAYOLE fragrance before continuing to checkout.</p>
+            <Link to="/store">Return to DAYOLE Store</Link>
+          </section>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(300px, .8fr)', gap: 24, alignItems: 'start' }}>
             <section style={{ background: '#fff', borderRadius: 20, padding: 28 }}>
@@ -93,7 +109,7 @@ export function CheckoutPage() {
               <p style={{ color: '#666', lineHeight: 1.6 }}>Checkout connection is active. The next step will add the customer contact, shipping address, shipping methods, taxes and payment fields here using WooCommerce.</p>
               <div style={{ marginTop: 24, padding: 18, borderRadius: 14, background: '#f7f7f5' }}>
                 <strong>WooCommerce checkout connected</strong>
-                <p style={{ marginBottom: 0, color: '#666' }}>Your cart token is being recognized and this page is reading the active WooCommerce checkout.</p>
+                <p style={{ marginBottom: 0, color: '#666' }}>Your active WooCommerce cart and checkout session are connected to this page.</p>
               </div>
             </section>
 
