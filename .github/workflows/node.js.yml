@@ -1,7 +1,7 @@
 # Build verification for the Scent Layer monorepo.
 # Runs on every push and PR to main. Installs all workspace deps, builds
-# the Vite client, and generates the Prisma client for the Express server.
-# No test step yet — add one here when a test suite exists.
+# the Vite client, generates the Prisma client, and prepares a FastComet
+# .tar.gz deployment package.
 
 name: Node.js CI
 
@@ -30,8 +30,11 @@ jobs:
         run: npm --workspace client run build
       - name: Generate Prisma client
         run: npm --workspace server run build
-      - name: Upload frontend dist
+      - name: Create FastComet deployment archive
+        run: tar -czf scent-layer-dist.tar.gz -C client/dist .
+      - name: Upload FastComet deployment package
         uses: actions/upload-artifact@v4
         with:
-         name: scent-layer-dist
-         path: client/dist
+          name: scent-layer-fastcomet-${{ matrix.node-version }}
+          path: scent-layer-dist.tar.gz
+          compression-level: 0
