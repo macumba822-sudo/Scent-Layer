@@ -94,6 +94,21 @@ export async function updateWooCommerceCustomer(cartToken, { billingAddress, shi
   return JSON.parse(body);
 }
 
+export async function selectWooCommerceShippingRate(cartToken, packageId, rateId) {
+  if (!baseUrl) throw new Error('WooCommerce URL is not configured');
+  if (!cartToken) throw new Error('Cart-Token is required');
+  if (packageId === undefined || packageId === null || !rateId) throw new Error('Package ID and shipping rate ID are required');
+  const url = new URL('/wp-json/wc/store/v1/cart/select-shipping-rate', baseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Cart-Token': cartToken },
+    body: JSON.stringify({ package_id: Number(packageId), rate_id: rateId }),
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`WooCommerce select shipping rate failed (${response.status}): ${body.slice(0, 500)}`);
+  return JSON.parse(body);
+}
+
 export async function getWooCommerceCheckout(cartToken) {
   if (!baseUrl) throw new Error('WooCommerce URL is not configured');
   if (!cartToken) throw new Error('Cart-Token is required');
