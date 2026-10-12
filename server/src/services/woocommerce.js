@@ -28,10 +28,17 @@ export async function getWooCommerceProductVariations(productId) {
   if(!response.ok){const body=await response.text();throw new Error(`WooCommerce variations failed (${response.status}): ${body.slice(0,300)}`);} return response.json();
 }
 
-export async function addWooCommerceCartItem({ productId, variationId, quantity=1, cartToken }) {
+export async function addWooCommerceCartItem({ productId, variationId, quantity=1, cartToken, customBlend=null }) {
   if(!baseUrl) throw new Error('WooCommerce URL is not configured'); let activeCartToken=cartToken||null;
   if(!activeCartToken){const cartUrl=new URL('/wp-json/wc/store/v1/cart',baseUrl);const cartResponse=await fetch(cartUrl,{method:'GET',headers:{Accept:'application/json'}});const cartBody=await cartResponse.text();if(!cartResponse.ok)throw new Error(`WooCommerce cart initialization failed (${cartResponse.status}): ${cartBody.slice(0,500)}`);activeCartToken=cartResponse.headers.get('Cart-Token');if(!activeCartToken)throw new Error('WooCommerce did not return a Cart-Token');}
-  const url=new URL('/wp-json/wc/store/v1/cart/add-item',baseUrl);const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','Cart-Token':activeCartToken},body:JSON.stringify({id:Number(variationId||productId),quantity:Number(quantity)})});const body=await response.text();if(!response.ok)throw new Error(`WooCommerce cart failed (${response.status}): ${body.slice(0,500)}`);return {cart:JSON.parse(body),cartToken:response.headers.get('Cart-Token')||activeCartToken};
+  const payload={id:Number(variationId||productId),quantity:Number(quantity)};
+  if(customBlend&&typeof customBlend==='object'){
+    payload.dayole_blend_name=String(customBlend.name||'').slice(0,80);
+    payload.dayole_blend_components=Array.isArray(customBlend.components)?customBlend.components.map(x=>String(x).slice(0,120)).slice(0,4):[];
+    payload.dayole_blend_size=String(customBlend.size||'').slice(0,30);
+    payload.dayole_blend_reference=String(customBlend.reference||'').slice(0,100);
+  }
+  const url=new URL('/wp-json/wc/store/v1/cart/add-item',baseUrl);const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','Cart-Token':activeCartToken},body:JSON.stringify(payload)});const body=await response.text();if(!response.ok)throw new Error(`WooCommerce cart failed (${response.status}): ${body.slice(0,500)}`);return {cart:JSON.parse(body),cartToken:response.headers.get('Cart-Token')||activeCartToken};
 }
 
 export async function getWooCommerceCart(cartToken){if(!baseUrl)throw new Error('WooCommerce URL is not configured');if(!cartToken)throw new Error('Cart-Token is required');const response=await fetch(new URL('/wp-json/wc/store/v1/cart',baseUrl),{method:'GET',headers:{Accept:'application/json','Cart-Token':cartToken}});const body=await response.text();if(!response.ok)throw new Error(`WooCommerce get cart failed (${response.status}): ${body.slice(0,500)}`);return JSON.parse(body);}
