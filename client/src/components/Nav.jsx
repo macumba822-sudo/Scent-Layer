@@ -13,12 +13,18 @@ import { NavWordmark } from './NavWordmark.jsx';
  */
 export function Nav({ theme: themeOverride, children }) {
   const [open, setOpen] = useState(false);
+  const [aiLanguage, setAiLanguage] = useState(() => localStorage.getItem('sl_ai_language') === 'en' ? 'en' : 'es');
   const { wishlistIds, user, effectiveTheme, cartCount, openCart } = useApp();
   const { pathname } = useLocation();
   const theme = themeOverride ?? effectiveTheme;
 
   useEffect(() => { setOpen(false); document.body.style.overflow = ''; }, [pathname]);
   useEffect(() => { document.body.style.overflow = open ? 'hidden' : ''; }, [open]);
+
+  function changeAiLanguage(language) {
+    setAiLanguage(language);
+    localStorage.setItem('sl_ai_language', language);
+  }
 
   const profileHref = user ? '/profile' : '/login';
   const profileLabel = user ? '♡ Wishlist' : '♡ Sign In';
@@ -38,6 +44,13 @@ export function Nav({ theme: themeOverride, children }) {
           </ul>
         )}
         <div className="nav-right">
+          {pathname === '/tools' && (
+            <div aria-label="AI response language" style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: '0.72rem' }}>
+              <button type="button" onClick={() => changeAiLanguage('es')} aria-pressed={aiLanguage === 'es'} style={{ opacity: aiLanguage === 'es' ? 1 : 0.55, fontWeight: aiLanguage === 'es' ? 700 : 400 }}>Español</button>
+              <span aria-hidden="true">/</span>
+              <button type="button" onClick={() => changeAiLanguage('en')} aria-pressed={aiLanguage === 'en'} style={{ opacity: aiLanguage === 'en' ? 1 : 0.55, fontWeight: aiLanguage === 'en' ? 700 : 400 }}>English</button>
+            </div>
+          )}
           <button
             type="button"
             className="nav-search"
@@ -78,6 +91,13 @@ export function Nav({ theme: themeOverride, children }) {
         <Link to={profileHref} className="drawer-wishlist" onClick={() => setOpen(false)}>
           {user ? '♡ My Wishlist' : '♡ Sign In'}
         </Link>
+        {pathname === '/tools' && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 0' }}>
+            <span>AI Language:</span>
+            <button type="button" onClick={() => changeAiLanguage('es')} aria-pressed={aiLanguage === 'es'} style={{ fontWeight: aiLanguage === 'es' ? 700 : 400 }}>Español</button>
+            <button type="button" onClick={() => changeAiLanguage('en')} aria-pressed={aiLanguage === 'en'} style={{ fontWeight: aiLanguage === 'en' ? 700 : 400 }}>English</button>
+          </div>
+        )}
         <button type="button" className="drawer-cart" onClick={() => { setOpen(false); openCart(); }}>
           Cart {cartCount > 0 && `(${cartCount})`}
         </button>
