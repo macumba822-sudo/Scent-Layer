@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 const CONFIG_URL='https://admin.dayolefragrance.com/wp-json/dayole/v1/wcpay-config';
 let stripeScriptPromise;
@@ -15,12 +15,31 @@ function loadStripeJs(){
   return stripeScriptPromise;
 }
 
-export function WooPaymentsCardFields(){
+export const WooPaymentsCardFields=forwardRef(function WooPaymentsCardFields({billingAddress},ref){
   const mountRef=useRef(null);
   const cardRef=useRef(null);
+  const stripeRef=useRef(null);
   const [status,setStatus]=useState('loading');
   const [message,setMessage]=useState('Loading secure card fields…');
   const [isLive,setIsLive]=useState(false);
+
+  useImperativeHandle(ref,()=>({
+    async createPaymentMethod(){
+      if(!stripeRef.current||!cardRef.current)throw new Error('Secure card fields are not ready yet.');
+      const billing=billingAddress||{};
+      const result=await stripeRef.current.createPaymentMethod({
+        type:'card',card:cardRef.current,
+        billing_details:{
+          name:[billing.first_name,billing.last_name].filter(Boolean).join(' '),
+          email:billing.email||undefined,phone:billing.phone||undefined,
+          address:{line1:billing.address_1||undefined,line2:billing.address_2||undefined,city:billing.city||undefined,state:billing.state||undefined,postal_code:billing.postcode||undefined,country:billing.country||'US'}
+        }
+      });
+      if(result.error)throw new Error(result.error.message||'Card details could not be verified.');
+      if(!result.paymentMethod?.id)throw new Error('WooPayments did not return a payment method.');
+      return {id:result.paymentMethod.id,isLive};
+    }
+  }),[billingAddress,isLive]);
 
   useEffect(()=>{
     let active=true;
@@ -33,7 +52,7 @@ export function WooPaymentsCardFields(){
         setIsLive(config.testMode===false);
         const Stripe=await loadStripeJs();
         if(!active||!mountRef.current)return;
-        const stripe=Stripe(config.publishableKey,{stripeAccount:config.accountId||undefined});
+        const stripe=Stripe(config.publishableKey,{stripeAccount:config.accountId||undefined});stripeRef.current=stripe;
         const elements=stripe.elements({locale:config.locale||'auto'});
         const card=elements.create('card',{hidePostalCode:true,style:{base:{fontSize:'16px',color:'#111827','::placeholder':{color:'#9ca3af'}},invalid:{color:'#b42318'}}});
         card.mount(mountRef.current);cardRef.current=card;
@@ -42,13 +61,13 @@ export function WooPaymentsCardFields(){
       }catch(error){if(active){setStatus('error');setMessage(error?.message||'Unable to load secure card fields.');}}
     }
     mount();
-    return()=>{active=false;try{cardRef.current?.destroy();}catch{}cardRef.current=null;};
+    return()=>{active=false;try{cardRef.current?.destroy();}catch{}cardRef.current=null;stripeRef.current=null;};
   },[]);
 
   return <div style={{marginTop:12,padding:16,border:'1px solid #ddd',borderRadius:12,background:'#fafafa'}}>
     <div style={{fontWeight:700,marginBottom:10}}>Card details</div>
     <div ref={mountRef} style={{minHeight:22,padding:'13px 14px',background:'#fff',border:'1px solid #d8d8d8',borderRadius:10}}/>
     <p style={{margin:'10px 0 0',fontSize:12,color:status==='error'?'#b42318':'#666'}}>{message}</p>
-    {isLive&&<p style={{margin:'8px 0 0',fontSize:12,fontWeight:700,color:'#9a6700'}}>WooPayments is currently in LIVE mode. Do not enter a test card or submit a test charge.</p>}
+    {isLive&&<p style={{margin:'8px 0 0',fontSize:12,fontWeight:700,color:'#9a6700'}}>WooPayments is currently in LIVE mode. A submitted order may create a real charge.</p>}
   </div>;
-}
+});
