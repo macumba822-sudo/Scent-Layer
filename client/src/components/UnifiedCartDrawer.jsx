@@ -19,6 +19,7 @@ export function UnifiedCartDrawer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [changingKey, setChangingKey] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [hasWooToken, setHasWooToken] = useState(() => {
     if (typeof window === 'undefined') return false;
     return Boolean(localStorage.getItem(CART_TOKEN_KEY));
@@ -108,6 +109,32 @@ export function UnifiedCartDrawer() {
       setError(err?.message || 'Unable to remove item');
     } finally {
       setChangingKey('');
+    }
+  }, []);
+
+  const startCheckout = useCallback(async () => {
+    const token = localStorage.getItem(CART_TOKEN_KEY);
+    if (!token) return;
+
+    setCheckoutLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/woocommerce/checkout', {
+        headers: {
+          Accept: 'application/json',
+          'Cart-Token': token,
+        },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || body?.error || `Unable to start checkout (${response.status})`);
+      }
+      sessionStorage.setItem('dayoleWooCheckout', JSON.stringify(body));
+      window.location.assign('/checkout');
+    } catch (err) {
+      setError(err?.message || 'Unable to start checkout');
+    } finally {
+      setCheckoutLoading(false);
     }
   }, []);
 
@@ -245,8 +272,13 @@ export function UnifiedCartDrawer() {
                 <span className="cart-summary-val">{money(subtotal, minorUnit, currency)}</span>
               </div>
               <p className="cart-foot-note">Shipping, taxes, coupons and payment will be calculated by WooCommerce at checkout.</p>
-              <button type="button" className="cart-checkout-btn" disabled>
-                Checkout coming next
+              <button
+                type="button"
+                className="cart-checkout-btn"
+                onClick={startCheckout}
+                disabled={checkoutLoading}
+              >
+                {checkoutLoading ? 'Loading checkout…' : 'Checkout'}
               </button>
             </footer>
           </>
