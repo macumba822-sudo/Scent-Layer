@@ -19,6 +19,7 @@ export function CheckoutPage() {
   const [address, setAddress] = useState(emptyAddress);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectingRate, setSelectingRate] = useState('');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -71,11 +72,31 @@ export function CheckoutPage() {
     finally { setSaving(false); }
   }
 
+  async function chooseShippingRate(packageId, rateId) {
+    const token = localStorage.getItem(CART_TOKEN_KEY);
+    if (!token) return;
+    setSelectingRate(`${packageId}:${rateId}`); setError('');
+    try {
+      const response = await fetch('/api/woocommerce/cart/shipping-rate', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Accept:'application/json', 'Cart-Token':token },
+        body:JSON.stringify({ package_id:packageId, rate_id:rateId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.message || body?.error || `Unable to select shipping (${response.status})`);
+      setCart(body);
+    } catch (err) { setError(err?.message || 'Unable to select shipping method'); }
+    finally { setSelectingRate(''); }
+  }
+
   const items = Array.isArray(cart?.items) ? cart.items : [];
   const totals = cart?.totals || {};
   const minorUnit = totals.currency_minor_unit ?? items[0]?.prices?.currency_minor_unit ?? 2;
   const currency = totals.currency_code || items[0]?.prices?.currency_code || 'USD';
   const total = totals.total_price ?? totals.total_items ?? 0;
+  const shippingTotal = totals.total_shipping ?? 0;
+  const taxTotal = totals.total_tax ?? 0;
+  const shippingPackages = Array.isArray(cart?.shipping_rates) ? cart.shipping_rates : [];
   const itemCount = useMemo(() => items.reduce((sum,item) => sum + Number(item.quantity || 0), 0), [items]);
 
   return <main style={{ minHeight:'70vh', background:'#f7f7f5', padding:'56px 20px 90px' }}><div style={{ width:'min(1120px,100%)', margin:'0 auto' }}>
@@ -91,13 +112,18 @@ export function CheckoutPage() {
           <label style={labelStyle}>Apartment, suite, etc. (optional)<input value={address.address_2} onChange={e=>setField('address_2',e.target.value)} style={fieldStyle}/></label>
           <div style={{display:'grid',gridTemplateColumns:'1.3fr .7fr .8fr',gap:12}}><label style={labelStyle}>City<input required value={address.city} onChange={e=>setField('city',e.target.value)} style={fieldStyle}/></label><label style={labelStyle}>State<input required maxLength="2" value={address.state} onChange={e=>setField('state',e.target.value.toUpperCase())} style={fieldStyle}/></label><label style={labelStyle}>ZIP<input required value={address.postcode} onChange={e=>setField('postcode',e.target.value)} style={fieldStyle}/></label></div>
           <input type="hidden" value="US" readOnly/>
-          {error && <p style={{margin:0,color:'#b42318'}}>{error}</p>}{saved && <p style={{margin:0,color:'#177245',fontWeight:600}}>Shipping information saved. WooCommerce totals updated.</p>}
+          {error && <p style={{margin:0,color:'#b42318'}}>{error}</p>}{saved && <p style={{margin:0,color:'#177245',fontWeight:600}}>Shipping information saved. Choose a delivery method below.</p>}
           <button type="submit" disabled={saving} style={{border:0,borderRadius:12,padding:'15px 18px',fontSize:16,fontWeight:700,background:'#111',color:'#fff',cursor:'pointer'}}>{saving?'Calculating…':'Continue to shipping'}</button>
         </form>
+
+        {saved && <div style={{marginTop:26,borderTop:'1px solid #e8e8e8',paddingTop:24}}><h3 style={{margin:'0 0 14px'}}>Shipping method</h3>
+          {shippingPackages.length===0 ? <p style={{color:'#777',margin:0}}>No shipping methods are available for this address. Check the shipping zones and methods in WooCommerce.</p> :
+          <div style={{display:'grid',gap:12}}>{shippingPackages.flatMap((pkg,pkgIndex)=>{const packageId=pkg.package_id ?? pkgIndex;const rates=Array.isArray(pkg.shipping_rates)?pkg.shipping_rates:[];return rates.map(rate=>{const selected=Boolean(rate.selected);const rateMinor=rate.currency_minor_unit ?? minorUnit;const rateCurrency=rate.currency_code || currency;const rateKey=`${packageId}:${rate.rate_id || rate.id}`;return <label key={rateKey} style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:12,alignItems:'center',padding:14,border:selected?'2px solid #111':'1px solid #ddd',borderRadius:12,cursor:'pointer'}}><input type="radio" name={`shipping-${packageId}`} checked={selected} disabled={Boolean(selectingRate)} onChange={()=>chooseShippingRate(packageId,rate.rate_id || rate.id)}/><span><strong style={{display:'block'}}>{rate.name || rate.label || 'Shipping'}</strong>{rate.description?<small style={{color:'#777'}}>{rate.description}</small>:null}</span><strong>{Number(rate.price||0)===0?'Free':money(rate.price,rateMinor,rateCurrency)}</strong></label>})})}</div>}
+        </div>}
       </section>
       <aside style={{background:'#fff',borderRadius:20,padding:28}}><div style={{display:'flex',justifyContent:'space-between',gap:16,alignItems:'baseline',marginBottom:20}}><h2 style={{margin:0}}>Order summary</h2><span style={{color:'#666'}}>{itemCount} item{itemCount===1?'':'s'}</span></div>
         <div style={{display:'grid',gap:18}}>{items.map(item=>{const prices=item.prices||{};const iu=prices.currency_minor_unit??minorUnit;const ic=prices.currency_code||currency;const image=item.images?.[0];const variation=Array.isArray(item.variation)?item.variation.map(v=>v.value).filter(Boolean).join(' · '):'';const line=Number(prices.price||0)*Number(item.quantity||1);return <div key={item.key||item.id} style={{display:'grid',gridTemplateColumns:'64px 1fr auto',gap:12,alignItems:'center'}}><div style={{width:64,height:64,borderRadius:12,overflow:'hidden',background:'#f3f3f3'}}>{image?.src?<img src={image.src} alt={image.alt||item.name||'Product'} style={{width:'100%',height:'100%',objectFit:'cover'}}/>:null}</div><div><strong style={{display:'block'}}>{item.name}</strong><span style={{color:'#777',fontSize:13}}>{variation||'DAYOLE'} · Qty {item.quantity}</span></div><strong>{money(line,iu,ic)}</strong></div>})}</div>
-        <div style={{borderTop:'1px solid #e8e8e8',marginTop:24,paddingTop:20,display:'flex',justifyContent:'space-between',fontSize:20}}><span>Total</span><strong>{money(total,minorUnit,currency)}</strong></div><p style={{color:'#777',fontSize:13,lineHeight:1.5}}>Shipping and tax will update after you enter your delivery address.</p>
+        <div style={{borderTop:'1px solid #e8e8e8',marginTop:24,paddingTop:18,display:'grid',gap:10}}><div style={{display:'flex',justifyContent:'space-between'}}><span>Shipping</span><span>{money(shippingTotal,minorUnit,currency)}</span></div><div style={{display:'flex',justifyContent:'space-between'}}><span>Tax</span><span>{money(taxTotal,minorUnit,currency)}</span></div><div style={{display:'flex',justifyContent:'space-between',fontSize:20,borderTop:'1px solid #eee',paddingTop:14}}><span>Total</span><strong>{money(total,minorUnit,currency)}</strong></div></div><p style={{color:'#777',fontSize:13,lineHeight:1.5}}>Shipping and tax are calculated by WooCommerce from your delivery address and selected shipping method.</p>
       </aside>
     </div>}
   </div></main>;
