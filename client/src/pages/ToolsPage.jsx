@@ -66,6 +66,9 @@ function LayerBuilder({ fragrances }) {
   function removeSlot(id) { setSlots(s => s.filter(x => x.id !== id)); setResult(null); }
   function selectScent(id, scent) { setSlots(s => s.map(x => x.id === id ? { ...x, scent, query: '' } : x)); setResult(null); }
   function updateQuery(id, query) { setSlots(s => s.map(x => x.id === id ? { ...x, query } : x)); }
+  function combinedNotes(key) {
+    return [...new Set(slots.filter(s => s.scent).flatMap(s => String(s.scent?.[key] ?? '').split(',').map(note => note.trim()).filter(Boolean)))].join(', ');
+  }
 
   async function analyze() {
     setLoading(true); setResult(null); setError(null);
@@ -94,7 +97,18 @@ function LayerBuilder({ fragrances }) {
           {!user ? <p style={{ fontSize: '0.78rem', color: 'var(--fg-soft)' }}><a href="/login" style={{ color: 'var(--gold)' }}>Sign in</a> to save blends to your profile under "My Blends".</p> : savedBlendId ? <p style={{ fontSize: '0.78rem', color: 'var(--gold)' }}>✓ Saved. Open <a href="/profile#blends" style={{ color: 'var(--gold)', textDecoration: 'underline' }}>My Blends</a> any time.</p> : <div className="save-blend-form"><input type="text" className="save-blend-input" value={blendName} onChange={(e) => setBlendName(e.target.value)} maxLength={80} placeholder="Name this blend"/><button type="button" className="save-blend-btn" disabled={!blendName.trim()} onClick={async () => { const payload = slots.filter(s => s.scent).map(s => ({ id: s.scent.id, name: s.scent.name, brand: s.scent.brand, family: s.scent.family, top: s.scent.top, heart: s.scent.heart, base: s.scent.base })); const saved = await saveBlend({ name: blendName.trim(), fragrances: payload, result }); if (saved) setSavedBlendId(saved.id); }}>Save Blend</button></div>}
         </div>
         <div className="result-section"><p className="result-section-title">The Character</p><StreamText as="p" className="result-text" text={result.character} /></div>
-        <div className="result-section"><p className="result-section-title">How It Layers</p><div className="note-layers"><div className="note-layer"><div className="note-layer-label">Top</div><div className="note-layer-val">{result.topNotes}</div></div><div className="note-layer"><div className="note-layer-label">Heart</div><div className="note-layer-val">{result.heartNotes}</div></div><div className="note-layer"><div className="note-layer-label">Base</div><div className="note-layer-val">{result.baseNotes}</div></div></div></div>
+        <div className="result-section"><p className="result-section-title">How It Layers</p>
+          <div className="note-layers">
+            <div className="note-layer"><div className="note-layer-label">Top</div><div className="note-layer-val">{combinedNotes('top')}</div></div>
+            <div className="note-layer"><div className="note-layer-label">Heart</div><div className="note-layer-val">{combinedNotes('heart')}</div></div>
+            <div className="note-layer"><div className="note-layer-label">Base</div><div className="note-layer-val">{combinedNotes('base')}</div></div>
+          </div>
+          <div style={{ marginTop: 18 }}>
+            <p className="result-text"><strong>Top:</strong> {result.topNotes}</p>
+            <p className="result-text"><strong>Heart:</strong> {result.heartNotes}</p>
+            <p className="result-text"><strong>Base:</strong> {result.baseNotes}</p>
+          </div>
+        </div>
         <div className="result-section"><p className="result-section-title">Wear It For</p><div className="occasions">{(result.occasions ?? []).map(o => <span key={o} className="occasion-tag">{o}</span>)}</div></div>
         <div className="result-section"><p className="result-section-title">Pro Tip</p><p className="result-text">{result.tip}</p></div>
         <div className="result-section"><p className="result-section-title">Sample The Blend</p><p className="result-text" style={{ marginBottom: 12 }}>Order samples of each component before committing to full bottles.</p><div className="blend-samples">{slots.filter(s => s.scent).map(s => <button key={s.id} type="button" className="blend-sample-btn" onClick={() => openSampleModal(`${s.scent.name}, ${s.scent.brand}`)}><span className="blend-sample-name">{s.scent.name}</span><span className="blend-sample-cta">Sample →</span></button>)}</div></div>
