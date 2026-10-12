@@ -18,6 +18,7 @@ export function UnifiedCartDrawer() {
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [changingKey, setChangingKey] = useState('');
   const [hasWooToken, setHasWooToken] = useState(() => {
     if (typeof window === 'undefined') return false;
     return Boolean(localStorage.getItem(CART_TOKEN_KEY));
@@ -49,6 +50,64 @@ export function UnifiedCartDrawer() {
       setError(err?.message || 'Unable to load cart');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const changeQuantity = useCallback(async (item, quantity) => {
+    const token = localStorage.getItem(CART_TOKEN_KEY);
+    if (!token || !item?.key || quantity < 1) return;
+
+    setChangingKey(item.key);
+    setError('');
+    try {
+      const response = await fetch('/api/woocommerce/cart/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Cart-Token': token,
+        },
+        body: JSON.stringify({ key: item.key, quantity }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || body?.error || `Unable to update cart (${response.status})`);
+      }
+      setCart(body);
+      window.dispatchEvent(new Event('dayole-cart-updated'));
+    } catch (err) {
+      setError(err?.message || 'Unable to update cart');
+    } finally {
+      setChangingKey('');
+    }
+  }, []);
+
+  const removeItem = useCallback(async (item) => {
+    const token = localStorage.getItem(CART_TOKEN_KEY);
+    if (!token || !item?.key) return;
+
+    setChangingKey(item.key);
+    setError('');
+    try {
+      const response = await fetch('/api/woocommerce/cart/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Cart-Token': token,
+        },
+        body: JSON.stringify({ key: item.key }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || body?.error || `Unable to remove item (${response.status})`);
+      }
+      setCart(body);
+      window.dispatchEvent(new Event('dayole-cart-updated'));
+    } catch (err) {
+      setError(err?.message || 'Unable to remove item');
+    } finally {
+      setChangingKey('');
     }
   }, []);
 
@@ -105,7 +164,7 @@ export function UnifiedCartDrawer() {
 
         {error ? (
           <div className="cart-empty">
-            <p className="cart-empty-text">Could not load your cart.</p>
+            <p className="cart-empty-text">There was a problem with your cart.</p>
             <p className="cart-empty-sub">{error}</p>
             <button type="button" className="cart-empty-cta" onClick={loadCart}>Try again</button>
           </div>
@@ -133,6 +192,7 @@ export function UnifiedCartDrawer() {
                 const variation = Array.isArray(item.variation)
                   ? item.variation.map(v => v.value).filter(Boolean).join(' · ')
                   : '';
+                const changing = changingKey === item.key;
 
                 return (
                   <li key={item.key || item.id} className="cart-item">
@@ -147,10 +207,29 @@ export function UnifiedCartDrawer() {
                           <p className="cart-item-name">{item.name}</p>
                           {variation && <p className="cart-item-size">{variation}</p>}
                         </div>
+                        <button
+                          type="button"
+                          className="cart-remove-x"
+                          onClick={() => removeItem(item)}
+                          disabled={changing}
+                          aria-label={`Remove ${item.name}`}
+                        >✕</button>
                       </div>
                       <div className="cart-item-bottom">
                         <div className="cart-qty">
-                          <span aria-label={`Quantity ${item.quantity}`}>Qty {item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => changeQuantity(item, Number(item.quantity || 1) - 1)}
+                            disabled={changing || Number(item.quantity || 1) <= 1}
+                            aria-label="Decrease quantity"
+                          >−</button>
+                          <span aria-label={`Quantity ${item.quantity}`}>{changing ? '…' : item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => changeQuantity(item, Number(item.quantity || 1) + 1)}
+                            disabled={changing || Number(item.quantity || 1) >= 99}
+                            aria-label="Increase quantity"
+                          >+</button>
                         </div>
                         <span className="cart-item-price">{money(linePrice, itemMinorUnit, itemCurrency)}</span>
                       </div>
