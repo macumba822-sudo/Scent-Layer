@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { WooPaymentsCardFields } from '../components/WooPaymentsCardFields.jsx';
 
 const CART_TOKEN_KEY='dayoleWooCartToken';
 const emptyAddress={first_name:'',last_name:'',email:'',phone:'',address_1:'',address_2:'',city:'',state:'TX',postcode:'',country:'US'};
@@ -111,7 +112,7 @@ export function CheckoutPage(){
         </div>
 
         <div style={{marginTop:26,borderTop:'1px solid #e8e8e8',paddingTop:24}}><h3 style={{margin:'0 0 6px'}}>Payment</h3><p style={{margin:'0 0 16px',color:'#777',fontSize:14}}>Payment methods are provided by WooCommerce.</p>
-          {gateways.length===0?<p style={{padding:14,border:'1px solid #ddd',borderRadius:12}}>No payment methods are currently available.</p>:<div style={{display:'grid',gap:12}}>{gateways.map(gateway=><label key={gateway.id} style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:12,alignItems:'start',padding:16,border:paymentMethod===gateway.id?'2px solid #111':'1px solid #ddd',borderRadius:12,cursor:'pointer'}}><input type="radio" name="payment-method" value={gateway.id} checked={paymentMethod===gateway.id} onChange={()=>setPaymentMethod(gateway.id)}/><span><strong style={{display:'block'}}>{gateway.title||gateway.method_title||gateway.id}</strong>{gateway.description?<span style={{display:'block',marginTop:5,color:'#777',fontSize:13}}>{gateway.description.replace(/<[^>]*>/g,'')}</span>:null}</span></label>)}</div>}
+          {gateways.length===0?<p style={{padding:14,border:'1px solid #ddd',borderRadius:12}}>No payment methods are currently available.</p>:<div style={{display:'grid',gap:12}}>{gateways.map(gateway=><div key={gateway.id}><label style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:12,alignItems:'start',padding:16,border:paymentMethod===gateway.id?'2px solid #111':'1px solid #ddd',borderRadius:12,cursor:'pointer'}}><input type="radio" name="payment-method" value={gateway.id} checked={paymentMethod===gateway.id} onChange={()=>setPaymentMethod(gateway.id)}/><span><strong style={{display:'block'}}>{gateway.title||gateway.method_title||gateway.id}</strong>{gateway.description?<span style={{display:'block',marginTop:5,color:'#777',fontSize:13}}>{gateway.description.replace(/<[^>]*>/g,'')}</span>:null}</span></label>{paymentMethod===gateway.id&&gateway.id==='woocommerce_payments'?<WooPaymentsCardFields/>:null}</div>)}</div>}
           {paymentMethod&&<p style={{margin:'14px 0 0',fontSize:13,color:'#666'}}>Selected: {gateways.find(g=>g.id===paymentMethod)?.title||paymentMethod}</p>}
         </div></>}
       </section>
