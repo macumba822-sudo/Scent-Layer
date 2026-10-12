@@ -8,6 +8,7 @@ import {
   updateWooCommerceCartItem,
   removeWooCommerceCartItem,
   updateWooCommerceCustomer,
+  selectWooCommerceShippingRate,
   getWooCommerceCheckout
 } from '../services/woocommerce.js';
 
@@ -81,6 +82,18 @@ router.post('/cart/customer', async (req, res) => {
   } catch (error) {
     console.error('WooCommerce update customer error:', error);
     res.status(500).json({ error: 'WooCommerce update customer error', message: error.message });
+  }
+});
+
+router.post('/cart/shipping-rate', async (req, res) => {
+  try {
+    const cartToken = req.headers['cart-token'];
+    if (!cartToken) return res.status(400).json({ error: 'Cart-Token is required' });
+    const cart = await selectWooCommerceShippingRate(cartToken, req.body.package_id, req.body.rate_id);
+    res.json(cart);
+  } catch (error) {
+    console.error('WooCommerce select shipping rate error:', error);
+    res.status(500).json({ error: 'WooCommerce select shipping rate error', message: error.message });
   }
 });
 
