@@ -30,41 +30,58 @@ export function CustomBlendPurchase() {
 
   useEffect(() => {
     if (pathname !== '/tools') return undefined;
-    let host = null;
+
+    let activeHost = null;
     let hiddenSample = null;
 
     const sync = () => {
       const result = document.querySelector('.result-content');
       if (!result) {
-        setMount(null);
+        if (activeHost) setMount(null);
+        activeHost = null;
         return;
       }
 
       const blendTitle = result.querySelector('.result-blend-name')?.textContent?.trim() || '';
       if (blendTitle) setName(current => current || blendTitle);
-      setComponents(Array.from(document.querySelectorAll('.builder-panel .filled-name')).map(el => el.textContent?.trim()).filter(Boolean));
+
+      const nextComponents = Array.from(document.querySelectorAll('.builder-panel .filled-name'))
+        .map(el => el.textContent?.trim())
+        .filter(Boolean);
+      setComponents(current => current.join('|') === nextComponents.join('|') ? current : nextComponents);
 
       const sections = Array.from(result.querySelectorAll(':scope > .result-section'));
-      hiddenSample = sections.find(section => section.querySelector('.result-section-title')?.textContent?.trim() === 'Sample The Blend') || null;
-      if (hiddenSample) hiddenSample.style.display = 'none';
+      const sampleSection = sections.find(section => {
+        const title = section.querySelector('.result-section-title')?.textContent?.trim().toLowerCase() || '';
+        return title === 'sample the blend';
+      }) || null;
+      if (sampleSection && sampleSection !== hiddenSample) {
+        if (hiddenSample) hiddenSample.style.display = '';
+        hiddenSample = sampleSection;
+        hiddenSample.style.display = 'none';
+      }
 
-      host = result.querySelector('[data-dayole-custom-blend-purchase]');
+      let host = result.querySelector('[data-dayole-custom-blend-purchase]');
       if (!host) {
         host = document.createElement('div');
         host.dataset.dayoleCustomBlendPurchase = 'true';
         host.className = 'result-section';
         result.appendChild(host);
       }
-      setMount(host);
+
+      if (host !== activeHost) {
+        activeHost = host;
+        setMount(host);
+      }
     };
 
     sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setInterval(sync, 500);
+
     return () => {
-      observer.disconnect();
+      window.clearInterval(timer);
       if (hiddenSample) hiddenSample.style.display = '';
-      if (host?.parentNode) host.parentNode.removeChild(host);
+      if (activeHost?.parentNode) activeHost.parentNode.removeChild(activeHost);
       setMount(null);
     };
   }, [pathname]);
@@ -79,7 +96,7 @@ export function CustomBlendPurchase() {
         const first = SIZE_ORDER.find(s => rows.some(v => variationSize(v).toLowerCase() === s.toLowerCase()));
         if (first) setSize(first);
       })
-      .catch(() => setMessage('Could not load custom perfume sizes.'));
+      .catch(() => setMessage('No se pudieron cargar los tamaños del perfume personalizado.'));
   }, [pathname]);
 
   const options = useMemo(() => SIZE_ORDER.map(label => ({
@@ -90,11 +107,13 @@ export function CustomBlendPurchase() {
   async function addBlend() {
     const perfumeName = name.trim();
     const selected = options.find(x => x.label === size)?.variation;
-    if (!perfumeName) { setMessage('Name your perfume first.'); return; }
-    if (!selected) { setMessage('Choose an available size.'); return; }
-    if (components.length < 2) { setMessage('Analyze your blend again before adding it to the cart.'); return; }
+    if (!perfumeName) { setMessage('Ponle un nombre a tu perfume.'); return; }
+    if (!selected) { setMessage('Selecciona un tamaño disponible.'); return; }
+    if (components.length < 2) { setMessage('Analiza nuevamente la mezcla antes de añadirla al carrito.'); return; }
 
-    setAdding(true); setMessage('');
+    setAdding(true);
+    setMessage('');
+
     try {
       const token = localStorage.getItem('dayoleWooCartToken');
       const reference = `AI-${Date.now().toString(36).toUpperCase()}`;
@@ -109,14 +128,18 @@ export function CustomBlendPurchase() {
           productId: CUSTOM_PRODUCT_ID,
           variationId: selected.id,
           quantity: 1,
-          blendName: perfumeName,
-          blendSize: size,
-          blendComponents: components,
-          blendReference: reference,
+          customBlend: {
+            name: perfumeName,
+            size,
+            components,
+            reference,
+          },
         }),
       });
+
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.message || 'Could not add the blend to the cart');
+      if (!response.ok) throw new Error(data?.message || 'No se pudo añadir la mezcla al carrito.');
+
       const newToken = response.headers.get('Cart-Token');
       if (newToken) localStorage.setItem('dayoleWooCartToken', newToken);
       window.dispatchEvent(new CustomEvent('dayole-cart-updated', { detail: { cart: data, itemCount: data?.items_count } }));
@@ -127,23 +150,32 @@ export function CustomBlendPurchase() {
         const saved = await saveBlend({
           name: perfumeName,
           fragrances,
-          result: { blendName: perfumeName, size, components, wooProductId: CUSTOM_PRODUCT_ID, wooVariationId: selected.id, reference },
+          result: {
+            blendName: perfumeName,
+            size,
+            components,
+            wooProductId: CUSTOM_PRODUCT_ID,
+            wooVariationId: selected.id,
+            reference,
+          },
         });
         if (saved) setSavedKey(saveKey);
       }
-      setMessage(user ? 'Added to cart and saved to My Blends.' : 'Added to cart.');
+
+      setMessage(user ? 'Añadido al carrito y guardado en My Blends.' : 'Añadido al carrito.');
     } catch (error) {
-      setMessage(error.message || 'Could not add the blend to the cart.');
+      setMessage(error.message || 'No se pudo añadir la mezcla al carrito.');
     } finally {
       setAdding(false);
     }
   }
 
   if (!mount) return null;
+
   return createPortal(
     <>
-      <p className="result-section-title">Buy This Blend</p>
-      <p className="result-text" style={{ marginBottom: 14 }}>Make this AI-created blend as your own DAYOLE custom perfume.</p>
+      <p className="result-section-title">COMPRA ESTA MEZCLA</p>
+      <p className="result-text" style={{ marginBottom: 14 }}>Convierte esta mezcla creada con IA en tu propio perfume personalizado DAYOLE.</p>
       <div className="save-blend-form" style={{ display: 'grid', gap: 12 }}>
         <label style={{ display: 'grid', gap: 6 }}>
           <span className="save-blend-row-label">Nombre de tu perfume</span>
