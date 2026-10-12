@@ -21,6 +21,7 @@ export function CheckoutPage(){
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [selectingRate,setSelectingRate]=useState('');
+  const [placingOrder,setPlacingOrder]=useState(false);
   const [error,setError]=useState('');
   const [saved,setSaved]=useState(false);
 
@@ -78,6 +79,31 @@ export function CheckoutPage(){
     }catch(err){setError(err?.message||'Unable to select shipping method');}finally{setSelectingRate('');}
   }
 
+  async function placePayPalOrder(){
+    const token=localStorage.getItem(CART_TOKEN_KEY);if(!token)return;
+    setPlacingOrder(true);setError('');
+    try{
+      const billing={...address};const shipping={...address};delete shipping.email;
+      const response=await fetch('/api/woocommerce/checkout',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json','Cart-Token':token},
+        body:JSON.stringify({
+          billing_address:billing,
+          shipping_address:shipping,
+          payment_method:'ppcp-gateway',
+          payment_data:[],
+          expected_total:String(total)
+        })
+      });
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body?.message||body?.error||body?.details?.message||`PayPal checkout failed (${response.status})`);
+      sessionStorage.setItem('dayoleWooCheckout',JSON.stringify(body));
+      const redirect=body?.payment_result?.redirect_url||body?.payment_result?.redirect||body?.redirect_url||body?.redirect;
+      if(!redirect)throw new Error('PayPal did not return a checkout redirect.');
+      window.location.assign(redirect);
+    }catch(err){setError(err?.message||'Unable to continue to PayPal');setPlacingOrder(false);}
+  }
+
   const items=Array.isArray(cart?.items)?cart.items:[];
   const totals=cart?.totals||{};
   const minorUnit=totals.currency_minor_unit??items[0]?.prices?.currency_minor_unit??2;
@@ -112,7 +138,7 @@ export function CheckoutPage(){
         </div>
 
         <div style={{marginTop:26,borderTop:'1px solid #e8e8e8',paddingTop:24}}><h3 style={{margin:'0 0 6px'}}>Payment</h3><p style={{margin:'0 0 16px',color:'#777',fontSize:14}}>Payment methods are provided by WooCommerce.</p>
-          {gateways.length===0?<p style={{padding:14,border:'1px solid #ddd',borderRadius:12}}>No payment methods are currently available.</p>:<div style={{display:'grid',gap:12}}>{gateways.map(gateway=><div key={gateway.id}><label style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:12,alignItems:'start',padding:16,border:paymentMethod===gateway.id?'2px solid #111':'1px solid #ddd',borderRadius:12,cursor:'pointer'}}><input type="radio" name="payment-method" value={gateway.id} checked={paymentMethod===gateway.id} onChange={()=>setPaymentMethod(gateway.id)}/><span><strong style={{display:'block'}}>{gateway.title||gateway.method_title||gateway.id}</strong>{gateway.description?<span style={{display:'block',marginTop:5,color:'#777',fontSize:13}}>{gateway.description.replace(/<[^>]*>/g,'')}</span>:null}</span></label>{paymentMethod===gateway.id&&gateway.id==='woocommerce_payments'?<WooPaymentsCardFields/>:null}</div>)}</div>}
+          {gateways.length===0?<p style={{padding:14,border:'1px solid #ddd',borderRadius:12}}>No payment methods are currently available.</p>:<div style={{display:'grid',gap:12}}>{gateways.map(gateway=><div key={gateway.id}><label style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:12,alignItems:'start',padding:16,border:paymentMethod===gateway.id?'2px solid #111':'1px solid #ddd',borderRadius:12,cursor:'pointer'}}><input type="radio" name="payment-method" value={gateway.id} checked={paymentMethod===gateway.id} onChange={()=>setPaymentMethod(gateway.id)}/><span><strong style={{display:'block'}}>{gateway.title||gateway.method_title||gateway.id}</strong>{gateway.description?<span style={{display:'block',marginTop:5,color:'#777',fontSize:13}}>{gateway.description.replace(/<[^>]*>/g,'')}</span>:null}</span></label>{paymentMethod===gateway.id&&gateway.id==='woocommerce_payments'?<WooPaymentsCardFields/>:null}{paymentMethod===gateway.id&&gateway.id==='ppcp-gateway'?<div style={{padding:'14px 0 2px'}}><button type="button" onClick={placePayPalOrder} disabled={placingOrder} style={{width:'100%',border:0,borderRadius:12,padding:'15px 18px',fontSize:16,fontWeight:700,background:'#ffc439',color:'#111',cursor:placingOrder?'wait':'pointer'}}>{placingOrder?'Opening PayPal…':'Continue with PayPal'}</button></div>:null}</div>)}</div>}
           {paymentMethod&&<p style={{margin:'14px 0 0',fontSize:13,color:'#666'}}>Selected: {gateways.find(g=>g.id===paymentMethod)?.title||paymentMethod}</p>}
         </div></>}
       </section>
