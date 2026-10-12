@@ -10,10 +10,19 @@ export async function api(path, { method = 'GET', body, auth = false } = {}) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
+
+  let requestBody = body;
+  if (body && path.startsWith('/api/ai/')) {
+    requestBody = {
+      ...body,
+      language: localStorage.getItem('sl_ai_language') === 'en' ? 'en' : 'es',
+    };
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: requestBody ? JSON.stringify(requestBody) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
