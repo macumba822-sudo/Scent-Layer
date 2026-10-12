@@ -1,6 +1,7 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const CONFIG_URL='https://admin.dayolefragrance.com/wp-json/dayole/v1/wcpay-config';
+const CART_TOKEN_KEY='dayoleWooCartToken';
 let stripeScriptPromise;
 
 function loadStripeJs(){
@@ -15,31 +16,14 @@ function loadStripeJs(){
   return stripeScriptPromise;
 }
 
-export const WooPaymentsCardFields=forwardRef(function WooPaymentsCardFields({billingAddress},ref){
+export function WooPaymentsCardFields(){
   const mountRef=useRef(null);
   const cardRef=useRef(null);
   const stripeRef=useRef(null);
   const [status,setStatus]=useState('loading');
   const [message,setMessage]=useState('Loading secure card fields…');
-  const [isLive,setIsLive]=useState(false);
-
-  useImperativeHandle(ref,()=>({
-    async createPaymentMethod(){
-      if(!stripeRef.current||!cardRef.current)throw new Error('Secure card fields are not ready yet.');
-      const billing=billingAddress||{};
-      const result=await stripeRef.current.createPaymentMethod({
-        type:'card',card:cardRef.current,
-        billing_details:{
-          name:[billing.first_name,billing.last_name].filter(Boolean).join(' '),
-          email:billing.email||undefined,phone:billing.phone||undefined,
-          address:{line1:billing.address_1||undefined,line2:billing.address_2||undefined,city:billing.city||undefined,state:billing.state||undefined,postal_code:billing.postcode||undefined,country:billing.country||'US'}
-        }
-      });
-      if(result.error)throw new Error(result.error.message||'Card details could not be verified.');
-      if(!result.paymentMethod?.id)throw new Error('WooPayments did not return a payment method.');
-      return {id:result.paymentMethod.id,isLive};
-    }
-  }),[billingAddress,isLive]);
+  const [submitting,setSubmitting]=useState(false);
+  const [orderResult,setOrderResult]=useState(null);
 
   useEffect(()=>{
     let active=true;
@@ -49,25 +33,68 @@ export const WooPaymentsCardFields=forwardRef(function WooPaymentsCardFields({bi
         const config=await configResponse.json().catch(()=>({}));
         if(!configResponse.ok||!config?.publishableKey)throw new Error('WooPayments public configuration is unavailable.');
         if(!config?.card?.enabled)throw new Error('Card payments are not enabled in WooPayments.');
-        setIsLive(config.testMode===false);
         const Stripe=await loadStripeJs();
         if(!active||!mountRef.current)return;
         const stripe=Stripe(config.publishableKey,{stripeAccount:config.accountId||undefined});stripeRef.current=stripe;
         const elements=stripe.elements({locale:config.locale||'auto'});
         const card=elements.create('card',{hidePostalCode:true,style:{base:{fontSize:'16px',color:'#111827','::placeholder':{color:'#9ca3af'}},invalid:{color:'#b42318'}}});
         card.mount(mountRef.current);cardRef.current=card;
-        card.on('change',event=>{if(!active)return;setStatus(event.complete?'ready':'editing');setMessage(event.error?.message||'Your card information is encrypted by Stripe and is not sent to DAYOLE servers.');});
-        setStatus('editing');setMessage('Your card information is encrypted by Stripe and is not sent to DAYOLE servers.');
+        card.on('change',event=>{if(!active)return;setStatus(event.complete?'ready':'editing');setMessage(event.error?.message||'Secure payment fields are ready.');});
+        setStatus('editing');setMessage('Secure payment fields are ready.');
       }catch(error){if(active){setStatus('error');setMessage(error?.message||'Unable to load secure card fields.');}}
     }
     mount();
     return()=>{active=false;try{cardRef.current?.destroy();}catch{}cardRef.current=null;stripeRef.current=null;};
   },[]);
 
+  async function placeOrder(){
+    if(submitting)return;
+    if(status!=='ready'){setMessage('Complete the card fields before placing the order.');return;}
+    const token=localStorage.getItem(CART_TOKEN_KEY);
+    if(!token){setMessage('Your DAYOLE cart could not be found.');return;}
+    setSubmitting(true);setOrderResult(null);setMessage('Preparing your order…');
+    try{
+      const checkoutResponse=await fetch('/api/woocommerce/checkout',{headers:{Accept:'application/json','Cart-Token':token}});
+      const checkout=await checkoutResponse.json().catch(()=>({}));
+      if(!checkoutResponse.ok)throw new Error(checkout?.message||checkout?.error||'Unable to load checkout details.');
+      const billing=checkout?.billing_address||{};
+      const shipping=checkout?.shipping_address||{};
+      const payment=await stripeRef.current.createPaymentMethod({
+        type:'card',card:cardRef.current,
+        billing_details:{
+          name:[billing.first_name,billing.last_name].filter(Boolean).join(' '),
+          email:billing.email||undefined,phone:billing.phone||undefined,
+          address:{line1:billing.address_1||undefined,line2:billing.address_2||undefined,city:billing.city||undefined,state:billing.state||undefined,postal_code:billing.postcode||undefined,country:billing.country||'US'}
+        }
+      });
+      if(payment.error)throw new Error(payment.error.message||'Payment details could not be prepared.');
+      if(!payment.paymentMethod?.id)throw new Error('WooPayments did not return a payment method.');
+      const response=await fetch('/api/woocommerce/checkout',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'application/json','Cart-Token':token},
+        body:JSON.stringify({
+          billing_address:billing,
+          shipping_address:shipping,
+          payment_method:'woocommerce_payments',
+          payment_data:[
+            {key:'payment_method',value:'card'},
+            {key:'wcpay-payment-method',value:payment.paymentMethod.id}
+          ]
+        })
+      });
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body?.message||body?.error||'WooCommerce could not place the order.');
+      setOrderResult(body);
+      setMessage(body?.status?`Order received. Status: ${body.status}.`:'Order received by WooCommerce.');
+      sessionStorage.setItem('dayoleWooOrder',JSON.stringify(body));
+    }catch(error){setMessage(error?.message||'Unable to place the order.');}
+    finally{setSubmitting(false);}
+  }
+
   return <div style={{marginTop:12,padding:16,border:'1px solid #ddd',borderRadius:12,background:'#fafafa'}}>
     <div style={{fontWeight:700,marginBottom:10}}>Card details</div>
     <div ref={mountRef} style={{minHeight:22,padding:'13px 14px',background:'#fff',border:'1px solid #d8d8d8',borderRadius:10}}/>
-    <p style={{margin:'10px 0 0',fontSize:12,color:status==='error'?'#b42318':'#666'}}>{message}</p>
-    {isLive&&<p style={{margin:'8px 0 0',fontSize:12,fontWeight:700,color:'#9a6700'}}>WooPayments is currently in LIVE mode. A submitted order may create a real charge.</p>}
+    <p style={{margin:'10px 0 0',fontSize:12,color:status==='error'?'#b42318':orderResult?'#177245':'#666'}}>{message}</p>
+    <button type="button" onClick={placeOrder} disabled={submitting||status==='error'||Boolean(orderResult)} style={{width:'100%',marginTop:14,border:0,borderRadius:12,padding:'15px 18px',fontSize:16,fontWeight:700,background:'#111',color:'#fff',cursor:submitting?'wait':'pointer',opacity:submitting||status==='error'?0.65:1}}>{submitting?'Placing order…':orderResult?'Order placed':'Place order'}</button>
   </div>;
-});
+}
