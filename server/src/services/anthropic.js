@@ -4,16 +4,14 @@ const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) console.warn('[anthropic] ANTHROPIC_API_KEY not set, AI endpoints will return 503');
 
 export const anthropic = apiKey ? new Anthropic({ apiKey }) : null;
-// Default to Sonnet 4.5, cheap + fast + plenty for editorial copy.
-// Override via ANTHROPIC_MODEL env var if you want Opus.
-// (The previous default `claude-opus-4-7` is not a real model identifier
-// and caused every AI endpoint to 404 silently.)
-export const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5';
+// Current Claude API model used by Scent Layer AI tools.
+// Can still be overridden from the server with ANTHROPIC_MODEL.
+export const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5';
 
 /**
- * Call Claude with a forced tool_use schema. Returns the parsed tool input.
- * Throws if the model fails to call the tool, propagating the underlying
- * Anthropic error message so 502/503 responses include the real reason.
+ * Call Claude with a tool schema and return the parsed tool input.
+ * Sonnet 5.5 no longer supports forced tool_choice ('tool' / 'any'), so the
+ * tool is offered in auto mode and the prompt explicitly requires its use.
  */
 export async function structuredCall({ system, user, toolName, schema, maxTokens = 1024 }) {
   if (!anthropic) {
@@ -27,9 +25,12 @@ export async function structuredCall({ system, user, toolName, schema, maxTokens
       model: MODEL,
       max_tokens: maxTokens,
       system,
-      tools: [{ name: toolName, description: `Return the ${toolName} payload.`, input_schema: schema }],
-      tool_choice: { type: 'tool', name: toolName },
-      messages: [{ role: 'user', content: user }],
+      tools: [{ name: toolName, description: `Return the ${toolName} payload. Use this tool to answer the request.`, input_schema: schema }],
+      tool_choice: { type: 'auto', disable_parallel_tool_use: true },
+      messages: [{
+        role: 'user',
+        content: `${user}\n\nYou must return the requested result by calling the ${toolName} tool. Do not answer with plain text.`,
+      }],
     });
   } catch (e) {
     // Surface the actual Anthropic error (bad model, bad key, rate limit,
