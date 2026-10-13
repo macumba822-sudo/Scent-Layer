@@ -59,14 +59,28 @@ router.post('/layer', async (req, res, next) => {
     const list = fragrances.map((f, i) => `${i + 1}. ${f.name}, ${f.brand} (${f.family})\n   Top: ${f.top}\n   Heart: ${f.heart}\n   Base: ${f.base}`).join('\n\n');
     const result = await structuredCall({
       system: VOICE,
-      user: `Analyze how these ${fragrances.length} fragrances layer together when worn on the same skin:\n\n${list}\n${formatUserContext(userContext)}\nReturn the analysis in the structured tool call.${languageInstruction(language)}`,
-      toolName: 'layer_analysis', maxTokens: 1024,
+      user: `Analyze how these ${fragrances.length} fragrances layer together when worn on the same skin:\n\n${list}\n${formatUserContext(userContext)}\nAlso create a reproducible blend recipe for physically premixing these selected fragrance concentrates. Assign one integer percentage to every fragrance in the same order supplied. The percentages MUST total exactly 100. Use the fragrance structures and relative intensity to choose a balanced ratio; do not simply use equal parts unless equal parts is actually the best balance. Return the analysis and recipe in the structured tool call.${languageInstruction(language)}`,
+      toolName: 'layer_analysis', maxTokens: 1200,
       schema: { type: 'object', properties: {
         blendName: { type: 'string' }, tags: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 5 }, character: { type: 'string' },
         topNotes: { type: 'string' }, heartNotes: { type: 'string' }, baseNotes: { type: 'string' }, occasions: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 6 },
-        tip: { type: 'string' }, reasoning: { type: 'string' }
-      }, required: ['blendName','tags','character','topNotes','heartNotes','baseNotes','occasions','tip','reasoning'] }
+        tip: { type: 'string' }, reasoning: { type: 'string' },
+        recipe: { type: 'array', minItems: fragrances.length, maxItems: fragrances.length, items: { type: 'object', properties: { name: { type: 'string' }, percentage: { type: 'integer', minimum: 1, maximum: 99 } }, required: ['name','percentage'] } }
+      }, required: ['blendName','tags','character','topNotes','heartNotes','baseNotes','occasions','tip','reasoning','recipe'] }
     });
+    if (Array.isArray(result.recipe)) {
+      result.recipe = result.recipe.map((item, index) => ({
+        name: fragrances[index]?.name || item?.name || `Layer ${index + 1}`,
+        percentage: Number(item?.percentage) || 0,
+      }));
+      const total = result.recipe.reduce((sum, item) => sum + item.percentage, 0);
+      if (total !== 100 && total > 0) {
+        const normalized = result.recipe.map(item => Math.max(1, Math.round((item.percentage / total) * 100)));
+        const diff = 100 - normalized.reduce((sum, value) => sum + value, 0);
+        normalized[0] += diff;
+        result.recipe = result.recipe.map((item, index) => ({ ...item, percentage: normalized[index] }));
+      }
+    }
     res.json(result);
   } catch (err) { next(err); }
 });
