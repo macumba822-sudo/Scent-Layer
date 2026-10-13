@@ -71,6 +71,14 @@ export function CustomBlendPurchase() {
   const options = useMemo(() => SIZE_ORDER.map(label => ({ label, variation: variations.find(v => variationSize(v).toLowerCase() === label.toLowerCase()) })).filter(x => x.variation), [variations]);
   const recipeTotal = recipe.reduce((sum, item) => sum + Number(item?.percentage || 0), 0);
   const recipeText = recipe.map(item => `${item.name} — ${item.percentage}%`).join(' + ');
+  const recipeValid = recipe.length >= 2 && recipeTotal === 100 && recipe.every(item => Number(item?.percentage) >= 1 && Number(item?.percentage) <= 99);
+
+  function changePercentage(index, value) {
+    const digits = String(value).replace(/[^0-9]/g, '');
+    const percentage = digits === '' ? 0 : Math.min(99, Math.max(0, Number(digits)));
+    setRecipe(current => current.map((item, i) => i === index ? { ...item, percentage } : item));
+    setMessage('');
+  }
 
   async function addBlend() {
     const perfumeName = name.trim();
@@ -78,7 +86,7 @@ export function CustomBlendPurchase() {
     if (!perfumeName) { setMessage('Ponle un nombre a tu perfume.'); return; }
     if (!selected) { setMessage('Selecciona un tamaño disponible.'); return; }
     if (components.length < 2) { setMessage('Analiza nuevamente la mezcla antes de añadirla al carrito.'); return; }
-    if (!recipe.length || recipeTotal !== 100) { setMessage('Analiza nuevamente la mezcla para generar la receta exacta de preparación.'); return; }
+    if (!recipeValid) { setMessage('Los porcentajes deben ser mayores que 0 y sumar exactamente 100%.'); return; }
     setAdding(true); setMessage('');
     try {
       const token = localStorage.getItem('dayoleWooCartToken');
@@ -107,12 +115,22 @@ export function CustomBlendPurchase() {
   if (!mount) return null;
   return createPortal(<>
     <p className="result-section-title">COMPRA ESTA MEZCLA</p>
-    <p className="result-text" style={{marginBottom:14}}>Convierte esta mezcla creada con IA en tu propio perfume personalizado DAYOLE.</p>
-    {recipe.length > 0 && <div style={{marginBottom:14}}><p className="save-blend-row-label">Receta de preparación</p><p className="result-text"><strong>{recipeText}</strong></p></div>}
+    <p className="result-text" style={{marginBottom:14}}>La IA propone una fórmula inicial. Ajusta los porcentajes a tu gusto antes de comprar.</p>
+    {recipe.length > 0 && <div style={{marginBottom:16}}>
+      <p className="save-blend-row-label" style={{marginBottom:8}}>Porcentajes de la mezcla</p>
+      <div style={{display:'grid',gap:8}}>
+        {recipe.map((item,index)=><label key={`${item.name}-${index}`} style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) 92px',gap:10,alignItems:'center'}}>
+          <span className="result-text" style={{margin:0}}>{item.name}</span>
+          <span style={{display:'flex',alignItems:'center',gap:5}}><input className="save-blend-input" type="number" inputMode="numeric" min="1" max="99" step="1" value={item.percentage || ''} onChange={e=>changePercentage(index,e.target.value)} style={{width:'72px',textAlign:'center'}}/><strong>%</strong></span>
+        </label>)}
+      </div>
+      <div style={{marginTop:10,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}><strong>TOTAL</strong><strong>{recipeTotal}% {recipeValid ? '✓' : ''}</strong></div>
+      {!recipeValid && <p className="result-text" style={{marginTop:6}}>El total debe ser exactamente 100%.</p>}
+    </div>}
     <div className="save-blend-form" style={{display:'grid',gap:12}}>
       <label style={{display:'grid',gap:6}}><span className="save-blend-row-label">Nombre de tu perfume</span><input className="save-blend-input" type="text" value={name} onChange={e=>setName(e.target.value)} maxLength={80} placeholder="Escribe el nombre de tu perfume" /></label>
       <label style={{display:'grid',gap:6}}><span className="save-blend-row-label">Tamaño</span><select className="save-blend-input" value={size} onChange={e=>setSize(e.target.value)}>{options.map(({label,variation})=><option key={variation.id} value={label}>{label} — {priceLabel(variation)}</option>)}</select></label>
-      <button type="button" className="analyze-btn" onClick={addBlend} disabled={adding||!options.length||!name.trim()}>{adding?'Añadiendo…':'AÑADIR ESTA MEZCLA AL CARRITO'}</button>
+      <button type="button" className="analyze-btn" onClick={addBlend} disabled={adding||!options.length||!name.trim()||!recipeValid}>{adding?'Añadiendo…':'AÑADIR ESTA MEZCLA AL CARRITO'}</button>
       {message&&<p className="result-text" style={{marginTop:2}}>{message}</p>}
     </div>
   </>,mount);
