@@ -31,5 +31,13 @@ export async function api(path, { method = 'GET', body, auth = false } = {}) {
     err.data = data;
     throw err;
   }
+
+  if (path === '/api/ai/layer') {
+    try {
+      const recipe = Array.isArray(data?.recipe) ? data.recipe : [];
+      sessionStorage.setItem('dayoleCurrentBlendRecipe', JSON.stringify(recipe));
+    } catch {}
+  }
+
   return data;
 }
